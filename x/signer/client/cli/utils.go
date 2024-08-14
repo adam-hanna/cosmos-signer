@@ -43,22 +43,32 @@ func (w *FilterNullKeysJSON) FilterNullJSONKeys(data interface{}) interface{} {
 	switch v := data.(type) {
 	case map[string]interface{}:
 		for key, val := range v {
-			if _, ok := w.NullKeys[key]; ok {
-				if val == nil {
-					delete(v, key)
-				} else {
-					v[key] = w.FilterNullJSONKeys(val)
+			// Recursively filter the value
+			v[key] = w.FilterNullJSONKeys(val)
+
+			// Remove the key if it's in NullKeys and the value is nil
+			if _, ok := w.NullKeys[key]; ok && v[key] == nil {
+				delete(v, key)
+			}
+
+			// Remove the key if contains only nil values after filtering
+			if nestedMap, isMap := v[key].(map[string]interface{}); isMap {
+				for nestedKey, nestedVal := range nestedMap {
+					if nestedVal == nil {
+						delete(nestedMap, nestedKey)
+					}
 				}
-			} else {
-				v[key] = w.FilterNullJSONKeys(val)
 			}
 		}
+
 		return v
+
 	case []interface{}:
 		for i := range v {
 			v[i] = w.FilterNullJSONKeys(v[i])
 		}
 		return v
+
 	default:
 		return v
 	}
