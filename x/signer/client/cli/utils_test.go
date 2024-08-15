@@ -196,6 +196,81 @@ func TestFilterNullKeysJSON_RemoveEmptyMaps(t *testing.T) {
 	}
 }
 
+func TestFilterNullKeysJSON_HandleNullArrayElems(t *testing.T) {
+	writer := NewFilterNullKeysJSON(nil)
+
+	// Test case where nested map becomes empty after filtering
+	input := []interface{}{
+		nil,
+		"foo",
+		nil,
+		1,
+	}
+	expectedOutput := []interface{}{
+		"foo",
+		1,
+	}
+
+	result := writer.FilterNullJSONKeys(input)
+	if !jsonEqual(result, expectedOutput) {
+		t.Errorf("Expected %v, got %v", expectedOutput, result)
+	}
+}
+
+func TestIsNil(t *testing.T) {
+	// Test nil values
+	tests := []struct {
+		name     string
+		value    any
+		expected bool
+	}{
+		{"Test nil pointer", (*int)(nil), true},
+		{"Test nil string pointer", (*string)(nil), true},
+		{"Test nil interface{}", nil, true},
+		{"Test nil map", (map[string]string)(nil), true},
+		{"Test nil slice", ([]int)(nil), true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			result := isNil(tc.value)
+			if result != tc.expected {
+				t.Errorf("Expected %v for %v, got %v", tc.expected, tc.value, result)
+			}
+		})
+	}
+
+	// Test non-nil values
+	tests = []struct {
+		name     string
+		value    any
+		expected bool
+	}{
+		{"Test non-nil pointer", 1, false},
+		{"Test non-nil string", "hello", false},
+		{"Test non-nil map", map[string]string{"key": "value"}, false},
+		{"Test non-nil slice", []int{1, 2, 3}, false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			result := isNil(tc.value)
+			if result != tc.expected {
+				t.Errorf("Expected %v for %v, got %v", tc.expected, tc.value, result)
+			}
+		})
+	}
+
+	// Test invalid value (using interface{})
+	t.Run("Test invalid value", func(t *testing.T) {
+		var invalidValue interface{}
+		result := isNil(invalidValue)
+		if !result {
+			t.Errorf("Expected true for invalid value, got %v", result)
+		}
+	})
+}
+
 // jsonEqual is a helper function to compare JSON objects
 func jsonEqual(a, b interface{}) bool {
 	aJSON, err := json.Marshal(a)

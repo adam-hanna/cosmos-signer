@@ -2,8 +2,10 @@ package cli
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
+	"reflect"
 )
 
 var (
@@ -64,9 +66,22 @@ func (w *FilterNullKeysJSON) FilterNullJSONKeys(data interface{}) interface{} {
 		return v
 
 	case []interface{}:
+		var tmpRet interface{}
+		j := 0
 		for i := range v {
-			v[i] = w.FilterNullJSONKeys(v[i])
+			tmpRet = w.FilterNullJSONKeys(v[i])
+			if !isNil(tmpRet) {
+				v[j] = tmpRet
+				j++
+			}
 		}
+
+		// avoid memory leak
+		for k := j; k < len(v); k++ {
+			v[k] = nil
+		}
+
+		v = v[:j]
 		return v
 
 	default:
@@ -94,4 +109,24 @@ func FilterNullJSONKeysFile(outputDoc string) {
 			panic(err)
 		}
 	}
+}
+
+func isNil(val any) bool {
+	if val == nil {
+		return true
+	}
+
+	v := reflect.ValueOf(val)
+	k := v.Kind()
+	fmt.Println(k)
+	switch k {
+	case reflect.Chan, reflect.Func, reflect.Map, reflect.Pointer,
+		reflect.UnsafePointer, reflect.Interface, reflect.Slice:
+		return v.IsNil()
+
+	case reflect.Invalid:
+		return true
+	}
+
+	return false
 }
