@@ -2,7 +2,6 @@ package cli
 
 import (
 	"encoding/json"
-	"fmt"
 	"io"
 	"os"
 	"reflect"
@@ -118,7 +117,6 @@ func isNil(val any) bool {
 
 	v := reflect.ValueOf(val)
 	k := v.Kind()
-	fmt.Println(k)
 	switch k {
 	case reflect.Chan, reflect.Func, reflect.Map, reflect.Pointer,
 		reflect.UnsafePointer, reflect.Interface, reflect.Slice:
