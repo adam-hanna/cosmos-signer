@@ -12,32 +12,19 @@ import (
 	authcli "github.com/cosmos/cosmos-sdk/x/auth/client/cli"
 )
 
-const (
-	flagPluginsDir = "plugins-dir"
-)
-
-// GetSignCommand returns the transaction sign command.
-func GetSignCommand() *cobra.Command {
-	cmd := authcli.GetSignCommand()
+// GetValidateCommand returns the transaction validate command.
+func GetValidateCommand() *cobra.Command {
+	cmd := authcli.GetValidateSignaturesCommand()
 	cmd.Flags().String(flagPluginsDir, "", "The directory to search for plugin files")
+	cmd.PreRun = preValidateCmd
 
-	cmd.PreRun = preSignCmd
-	authMakeSignCmd := cmd.RunE
-	cmd.RunE = makeSignCmd(authMakeSignCmd)
-
-	cmd.PostRunE = func(cmd *cobra.Command, args []string) error {
-		outputDoc, err := cmd.Flags().GetString(flags.FlagOutputDocument)
-		if err != nil {
-			return err
-		}
-		FilterNullJSONKeysFile(outputDoc)
-		return nil
-	}
+	authMakeValidateCmd := cmd.RunE
+	cmd.RunE = makeValidateCmd(authMakeValidateCmd)
 
 	return cmd
 }
 
-func preSignCmd(cmd *cobra.Command, _ []string) {
+func preValidateCmd(cmd *cobra.Command, _ []string) {
 	err := cmd.MarkFlagRequired(flags.FlagOffline)
 	if err != nil {
 		panic(err)
@@ -47,6 +34,7 @@ func preSignCmd(cmd *cobra.Command, _ []string) {
 	if err != nil {
 		panic(err)
 	}
+
 	err = cmd.MarkFlagRequired(flags.FlagSequence)
 	if err != nil {
 		panic(err)
@@ -58,7 +46,7 @@ func preSignCmd(cmd *cobra.Command, _ []string) {
 	}
 }
 
-func makeSignCmd(origMakeSignCmd func(cmd *cobra.Command, args []string) error) func(cmd *cobra.Command, args []string) error {
+func makeValidateCmd(origMakeValidateCmd func(cmd *cobra.Command, args []string) error) func(cmd *cobra.Command, args []string) error {
 	return func(cmd *cobra.Command, args []string) (err error) {
 		var clientCtx client.Context
 		clientCtx, err = client.GetClientTxContext(cmd)
@@ -96,6 +84,6 @@ func makeSignCmd(origMakeSignCmd func(cmd *cobra.Command, args []string) error) 
 			}
 		}
 
-		return origMakeSignCmd(cmd, args)
+		return origMakeValidateCmd(cmd, args)
 	}
 }

@@ -10,3 +10,4 @@ build/
 *.ign
 Icon?
 coverage.out
+*.json

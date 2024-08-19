@@ -2,13 +2,28 @@ package cli
 
 import (
 	"errors"
+	"fmt"
+	"plugin"
 	"reflect"
 	"testing"
 
 	"github.com/cosmos/cosmos-sdk/client"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	gomock "go.uber.org/mock/gomock"
 )
+
+// MockPlugin defines a mock plugin for testing purposes
+type MockPlugin struct {
+	lookupResults map[string]interface{}
+}
+
+func (m *MockPlugin) Lookup(symName string) (plugin.Symbol, error) {
+	if result, ok := m.lookupResults[symName]; ok {
+		return result, nil
+	}
+	return nil, fmt.Errorf("symbol %s not found", symName)
+}
 
 func TestSanitizeSymbolName(t *testing.T) {
 	testCases := []struct {
@@ -180,6 +195,118 @@ func TestFindUnregisteredTypes(t *testing.T) {
 				require.NoError(t, err)
 			}
 			require.Equal(t, tt.expectedResult, result)
+		})
+	}
+}
+
+// TestRegisterTypes defines tests for the RegisterTypes function
+func TestRegisterTypes(t *testing.T) {
+	type testCase struct {
+		name         string
+		ctxMock      *client.Context
+		pluginsDir   string
+		unregistered map[string]struct{}
+		mockFiles    []string // Mocked list of plugin files
+		mockLegacy   func(*MockCodec) error
+		mockRegistry func(*MockInterfaceRegistry) error
+		expectedErr  error
+	}
+
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	// Create a mock Codec
+	mCodec := NewMockCodec(ctrl)
+
+	clientCtx := client.Context{
+		Codec: mCodec,
+	}
+
+	// Create a mock InterfaceRegistry that implements the types.InterfaceRegistry interface
+	mIRegistry := NewMockInterfaceRegistry(ctrl)
+
+	testCases := []testCase{
+		{
+			name:         "Empty unregistered types",
+			ctxMock:      &clientCtx,
+			pluginsDir:   "/path/to/plugins",
+			unregistered: map[string]struct{}{},
+			mockFiles:    []string{"/path/to/plugins/plugin1.so"},
+			mockLegacy: func(m *MockCodec) error {
+				// Mock behavior of legacyAminoCodec (if needed)
+				return nil
+			},
+			mockRegistry: func(m *MockInterfaceRegistry) error {
+				// Set expectations on InterfaceRegistry methods (if needed)
+				// for example: registry.ExpectRegisterInterface(...)
+				return nil
+			},
+			expectedErr: nil,
+		},
+		{
+			name:         "Unregistered type found",
+			ctxMock:      &clientCtx,
+			pluginsDir:   "/path/to/plugins",
+			unregistered: map[string]struct{}{"/cosmos.bank.v1beta1.MsgSend": {}},
+			mockFiles:    []string{"/path/to/plugins/plugin1.so"},
+			mockLegacy: func(m *MockCodec) error {
+				// Mock behavior for registering "/cosmos.bank.v1beta1.MsgSend"
+				return nil
+			},
+			mockRegistry: func(m *MockInterfaceRegistry) error {
+				// Mock behavior for registering interfaces (if needed)
+				return nil
+			},
+			expectedErr: nil,
+		},
+		{
+			name:         "Unregistered type not found",
+			ctxMock:      &clientCtx,
+			pluginsDir:   "/path/to/plugins",
+			unregistered: map[string]struct{}{"/cosmos.unknown.v1beta1.MsgUnknown": {}},
+			mockFiles:    []string{"/path/to/plugins/plugin1.so"},
+			mockLegacy: func(m *MockCodec) error {
+				// No need to mock behavior
+				return nil
+			},
+			mockRegistry: func(m *MockInterfaceRegistry) error {
+				// No need to mock behavior
+				return nil
+			},
+			expectedErr: fmt.Errorf("failed to lookup symbol /cosmos.unknown.v1beta1"),
+		},
+	}
+
+	for idx, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			mockPlugin := &mock.Mock{}
+			if tc.mockLegacy != nil {
+				mockPlugin.On(fmt.Sprintf("%s_RegisterLegacyAminoCodec", "mocked_package_name")).Run(func(args mock.Arguments) {
+					tc.mockLegacy(mCodec)
+				}).Return(nil)
+			}
+			if tc.mockRegistry != nil {
+				if tc.mockRegistry != nil {
+					mCodec.EXPECT().InterfaceRegistry().AnyTimes()
+					tc.mockRegistry(mIRegistry)
+				}
+			}
+
+			// Run the test
+			err := RegisterTypes(*tc.ctxMock, tc.pluginsDir, tc.unregistered)
+			if tc.expectedErr == nil && err != nil {
+				t.Errorf("%d, Expected no error, got: %v", idx, err)
+			} else if tc.expectedErr != nil && err == nil {
+				t.Errorf("%d, Expected error: %v, got nil", idx, tc.expectedErr)
+			} else if tc.expectedErr != nil && err != nil {
+				if err.Error() != tc.expectedErr.Error() {
+					t.Errorf("%d, Expected error: %v, got: %v", idx, tc.expectedErr, err)
+				}
+			} else if err == nil && tc.expectedErr == nil {
+				// No error expected
+			} else {
+				t.Error("Should not get here")
+			}
 		})
 	}
 }

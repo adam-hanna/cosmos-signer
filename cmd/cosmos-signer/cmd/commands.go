@@ -34,20 +34,16 @@ func txCommand(rootCmd *cobra.Command) *cobra.Command {
 			cmd.SetOut(signercli.NewFilterNullKeysJSON(cmd.OutOrStdout()))
 			return nil
 		},
-		PersistentPostRunE: func(cmd *cobra.Command, _ []string) error {
-			outputDoc, err := cmd.Flags().GetString(flags.FlagOutputDocument)
-			if err != nil {
-				return err
-			}
-			signercli.FilterNullJSONKeysFile(outputDoc)
-			return nil
-		},
 	}
 
 	cmd.AddCommand(
 		signercli.GetSignCommand(),
 	)
 	cmd.PersistentFlags().String(flags.FlagChainID, "", "The network chain ID")
+
+	cmd.AddCommand(
+		signercli.GetValidateCommand(),
+	)
 
 	return cmd
 }
