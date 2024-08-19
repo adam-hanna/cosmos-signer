@@ -42,7 +42,7 @@ func txCommand(rootCmd *cobra.Command) *cobra.Command {
 	cmd.PersistentFlags().String(flags.FlagChainID, "", "The network chain ID")
 
 	cmd.AddCommand(
-		signercli.GetValidateCommand(),
+		signercli.GetValidateSignaturesCommand(),
 	)
 
 	return cmd

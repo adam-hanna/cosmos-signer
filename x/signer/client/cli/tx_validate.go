@@ -12,8 +12,8 @@ import (
 	authcli "github.com/cosmos/cosmos-sdk/x/auth/client/cli"
 )
 
-// GetValidateCommand returns the transaction validate command.
-func GetValidateCommand() *cobra.Command {
+// GetValidateSignaturesCommand returns the transaction validate command.
+func GetValidateSignaturesCommand() *cobra.Command {
 	cmd := authcli.GetValidateSignaturesCommand()
 	cmd.Flags().String(flagPluginsDir, "", "The directory to search for plugin files")
 	cmd.PreRun = preValidateCmd

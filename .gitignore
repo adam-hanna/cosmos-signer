@@ -11,3 +11,5 @@ build/
 Icon?
 coverage.out
 *.json
+
+x/signer/client/cli/keyring-test/
