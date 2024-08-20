@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"cosmossdk.io/core/address"
 	"cosmossdk.io/math"
@@ -28,24 +29,15 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
-func TxSignExec(clientCtx client.Context, from sdk.AccAddress, filename string, extraArgs ...string) (testutil.BufferWriter, error) {
-	//account, err := clientCtx.AccountRetriever.GetAccount(clientCtx, from)
-	//if err != nil {
-	//	return nil, err
-	//}
-	//if account == nil {
-	//	return nil, fmt.Errorf("account not found: %s", from)
-	//}
+func TxSignExec(clientCtx client.Context, from sdk.AccAddress, keyringDir string, filename string, extraArgs ...string) (testutil.BufferWriter, error) {
 	fmt.Printf("keyring dir: %s\n", clientCtx.KeyringDir)
 	args := []string{
 		fmt.Sprintf("--from=%s", from.String()),
 		fmt.Sprintf("--%s=%s", flags.FlagHome, strings.Replace(clientCtx.HomeDir, "simd", "simcli", 1)),
 		fmt.Sprintf("--%s=%s", flags.FlagChainID, clientCtx.ChainID),
 		fmt.Sprintf("--keyring-backend=%s", clientCtx.Keyring.Backend()),
-		"--keyring-dir=.",
+		fmt.Sprintf("--keyring-dir=%s", keyringDir),
 		"--plugins-dir=./testfiles/",
-		//fmt.Sprintf("-a=%d", account.GetAccountNumber()),
-		//fmt.Sprintf("--sequence=%d", account.GetSequence()),
 		"-a=0",
 		"--sequence=2",
 		"--offline",
@@ -58,21 +50,14 @@ func TxSignExec(clientCtx client.Context, from sdk.AccAddress, filename string, 
 	return clitestutil.ExecTestCLICmd(clientCtx, cmd, append(args, extraArgs...))
 }
 
-func TxValidateSignaturesExec(clientCtx client.Context, from sdk.AccAddress, filename string) (testutil.BufferWriter, error) {
-	//account, err := clientCtx.AccountRetriever.GetAccount(clientCtx, from)
-	//if err != nil {
-	//	return nil, err
-	//}
+func TxValidateSignaturesExec(clientCtx client.Context, keyringDir string, filename string) (testutil.BufferWriter, error) {
 	args := []string{
 		filename,
-		// fmt.Sprintf("--%s=%s", flags.FlagHome, strings.Replace(clientCtx.HomeDir, "simd", "simcli", 1)),
 		fmt.Sprintf("--%s=%s", flags.FlagChainID, clientCtx.ChainID),
 		"--offline",
 		fmt.Sprintf("--keyring-backend=%s", clientCtx.Keyring.Backend()),
-		"--keyring-dir=.",
+		fmt.Sprintf("--keyring-dir=%s", keyringDir),
 		"--plugins-dir=./testfiles/",
-		//fmt.Sprintf("-a=%d", account.GetAccountNumber()),
-		//fmt.Sprintf("--sequence=%d", account.GetSequence()),
 		"-a=0",
 		"--sequence=2",
 	}
@@ -89,6 +74,8 @@ type CLITestSuite struct {
 	clientCtx client.Context
 	val       sdk.AccAddress
 	val1      sdk.AccAddress
+
+	keyringDir string
 
 	ac address.Codec
 }
@@ -110,17 +97,18 @@ func TestCLITestSuite(t *testing.T) {
 }
 
 func (s *CLITestSuite) TearDownSuite() {
-	os.RemoveAll("./keyring-test")
+	os.RemoveAll(s.keyringDir)
 }
 
 func (s *CLITestSuite) SetupSuite() {
 	s.encCfg = testutilmod.MakeTestEncodingConfig(auth.AppModuleBasic{}, bank.AppModuleBasic{}, gov.AppModuleBasic{})
-	//tmpDir, err := os.MkdirTemp("", fmt.Sprintf("tmpKeyringDir-%s", time.Now().Format("20060102-150405")))
-	//s.Require().NoError(err)
-	kr, err := keyring.New("test", keyring.BackendTest, ".", nil, s.encCfg.Codec)
+	keyringDir, err := os.MkdirTemp("", fmt.Sprintf("tmpKeyringDir-%s", time.Now().Format("20060102-150405")))
+	s.Require().NoError(err)
+	s.keyringDir = keyringDir
+
+	kr, err := keyring.New("test", keyring.BackendTest, keyringDir, nil, s.encCfg.Codec)
 	s.Require().NoError(err)
 	s.kr = kr
-	// s.kr = keyring.NewInMemory(s.encCfg.Codec)
 	s.baseCtx = client.Context{}.
 		WithKeyring(s.kr).
 		WithTxConfig(s.encCfg.TxConfig).
@@ -181,25 +169,28 @@ func (s *CLITestSuite) TestCLIValidateSignatures() {
 	unsignedTx := testutil.WriteToNewTempFile(s.T(), res.String())
 	defer unsignedTx.Close()
 
-	res, err = TxSignExec(s.clientCtx, s.val, unsignedTx.Name())
+	res, err = TxSignExec(s.clientCtx, s.val, s.keyringDir, unsignedTx.Name())
 	s.Require().NoError(err)
 	signedTx, err := s.clientCtx.TxConfig.TxJSONDecoder()(res.Bytes())
 	s.Require().NoError(err)
 
+	// write signed tx to file
 	signedTxFile := testutil.WriteToNewTempFile(s.T(), res.String())
 	defer signedTxFile.Close()
+
+	// verify signed tx
 	txBuilder, err := s.clientCtx.TxConfig.WrapTxBuilder(signedTx)
 	s.Require().NoError(err)
-	_, err = TxValidateSignaturesExec(s.clientCtx, s.val, signedTxFile.Name())
+	_, err = TxValidateSignaturesExec(s.clientCtx, s.keyringDir, signedTxFile.Name())
 	s.Require().NoError(err)
 
+	// modify tx and fail
 	txBuilder.SetMemo("MODIFIED TX")
 	bz, err := s.clientCtx.TxConfig.TxJSONEncoder()(txBuilder.GetTx())
 	s.Require().NoError(err)
 
 	modifiedTxFile := testutil.WriteToNewTempFile(s.T(), string(bz))
 	defer modifiedTxFile.Close()
-
-	_, err = TxValidateSignaturesExec(s.clientCtx, s.val, modifiedTxFile.Name())
+	_, err = TxValidateSignaturesExec(s.clientCtx, s.keyringDir, modifiedTxFile.Name())
 	s.Require().EqualError(err, "signatures validation failed")
 }
