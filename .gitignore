@@ -13,4 +13,3 @@ coverage.out
 *.json
 
 x/signer/client/cli/keyring-test/
-x/signer/client/cli/testfiles/

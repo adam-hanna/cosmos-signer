@@ -7,7 +7,11 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/atomone-hub/cosmos-signer/x/signer/client/cli/testfiles"
+
 	"github.com/cosmos/cosmos-sdk/client"
+	"github.com/cosmos/cosmos-sdk/codec"
+	types "github.com/cosmos/cosmos-sdk/codec/types"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	gomock "go.uber.org/mock/gomock"
@@ -129,14 +133,14 @@ func TestFindUnregisteredTypes(t *testing.T) {
 	defer ctrl.Finish()
 
 	// Create a mock InterfaceRegistry that implements the types.InterfaceRegistry interface
-	mIRegistry := NewMockInterfaceRegistry(ctrl)
+	mIRegistry := testfiles.NewMockInterfaceRegistry(ctrl)
 
 	// Setup the expected method calls and return values for the mock InterfaceRegistry
 	mIRegistry.EXPECT().Resolve("/cosmos.bank.v1beta1.MsgSend").Return(nil, nil).AnyTimes()                               // Registered type
 	mIRegistry.EXPECT().Resolve("/cosmos.bank.v1beta1.MsgBurn").Return(nil, errors.New("type not registered")).AnyTimes() // Unregistered type
 
 	// Create a mock Codec
-	mCodec := NewMockCodec(ctrl)
+	mCodec := testfiles.NewMockCodec(ctrl)
 
 	// Setup the expected method calls and return values for the mock Codec
 	mCodec.EXPECT().InterfaceRegistry().Return(mIRegistry).AnyTimes()
@@ -207,8 +211,8 @@ func TestRegisterTypes(t *testing.T) {
 		pluginsDir   string
 		unregistered map[string]struct{}
 		mockFiles    []string // Mocked list of plugin files
-		mockLegacy   func(*MockCodec) error
-		mockRegistry func(*MockInterfaceRegistry) error
+		mockLegacy   func(*testfiles.MockCodec) error
+		mockRegistry func(*testfiles.MockInterfaceRegistry) error
 		expectedErr  error
 	}
 
@@ -216,29 +220,33 @@ func TestRegisterTypes(t *testing.T) {
 	defer ctrl.Finish()
 
 	// Create a mock Codec
-	mCodec := NewMockCodec(ctrl)
+	mCodec := testfiles.NewMockCodec(ctrl)
 
 	clientCtx := client.Context{
-		Codec: mCodec,
+		Codec:       mCodec,
+		LegacyAmino: codec.NewLegacyAmino(),
 	}
 
 	// Create a mock InterfaceRegistry that implements the types.InterfaceRegistry interface
-	mIRegistry := NewMockInterfaceRegistry(ctrl)
+	mIRegistry := testfiles.NewMockInterfaceRegistry(ctrl)
+
+	// Setup mock plugin behavior
+	mockPlugin := new(mock.Mock)
+	mockPlugin.On("Lookup", "cosmos_bank_v1beta1_RegisterLegacyAminoCodec").Return(func(c *codec.LegacyAmino) {}, nil)
+	mockPlugin.On("Lookup", "cosmos_bank_v1beta1_RegisterInterfaces").Return(func(reg types.InterfaceRegistry) {}, nil)
 
 	testCases := []testCase{
 		{
 			name:         "Empty unregistered types",
 			ctxMock:      &clientCtx,
-			pluginsDir:   "/path/to/plugins",
+			pluginsDir:   "./testfiles",
 			unregistered: map[string]struct{}{},
 			mockFiles:    []string{"/path/to/plugins/plugin1.so"},
-			mockLegacy: func(m *MockCodec) error {
-				// Mock behavior of legacyAminoCodec (if needed)
+			mockLegacy: func(m *testfiles.MockCodec) error {
 				return nil
 			},
-			mockRegistry: func(m *MockInterfaceRegistry) error {
-				// Set expectations on InterfaceRegistry methods (if needed)
-				// for example: registry.ExpectRegisterInterface(...)
+			mockRegistry: func(m *testfiles.MockInterfaceRegistry) error {
+				m.EXPECT().RegisterImplementations(gomock.Any(), gomock.Any()).AnyTimes()
 				return nil
 			},
 			expectedErr: nil,
@@ -246,15 +254,14 @@ func TestRegisterTypes(t *testing.T) {
 		{
 			name:         "Unregistered type found",
 			ctxMock:      &clientCtx,
-			pluginsDir:   "/path/to/plugins",
+			pluginsDir:   "./testfiles",
 			unregistered: map[string]struct{}{"/cosmos.bank.v1beta1.MsgSend": {}},
 			mockFiles:    []string{"/path/to/plugins/plugin1.so"},
-			mockLegacy: func(m *MockCodec) error {
-				// Mock behavior for registering "/cosmos.bank.v1beta1.MsgSend"
+			mockLegacy: func(m *testfiles.MockCodec) error {
 				return nil
 			},
-			mockRegistry: func(m *MockInterfaceRegistry) error {
-				// Mock behavior for registering interfaces (if needed)
+			mockRegistry: func(m *testfiles.MockInterfaceRegistry) error {
+				m.EXPECT().RegisterImplementations(gomock.Any(), gomock.Any()).AnyTimes()
 				return nil
 			},
 			expectedErr: nil,
@@ -262,15 +269,14 @@ func TestRegisterTypes(t *testing.T) {
 		{
 			name:         "Unregistered type not found",
 			ctxMock:      &clientCtx,
-			pluginsDir:   "/path/to/plugins",
+			pluginsDir:   "./testfiles",
 			unregistered: map[string]struct{}{"/cosmos.unknown.v1beta1.MsgUnknown": {}},
 			mockFiles:    []string{"/path/to/plugins/plugin1.so"},
-			mockLegacy: func(m *MockCodec) error {
-				// No need to mock behavior
+			mockLegacy: func(m *testfiles.MockCodec) error {
 				return nil
 			},
-			mockRegistry: func(m *MockInterfaceRegistry) error {
-				// No need to mock behavior
+			mockRegistry: func(m *testfiles.MockInterfaceRegistry) error {
+				m.EXPECT().RegisterImplementations(gomock.Any(), gomock.Any()).AnyTimes()
 				return nil
 			},
 			expectedErr: fmt.Errorf("failed to lookup symbol /cosmos.unknown.v1beta1"),
@@ -279,17 +285,14 @@ func TestRegisterTypes(t *testing.T) {
 
 	for idx, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			mockPlugin := &mock.Mock{}
+			// Set expectations for InterfaceRegistry method
+			mCodec.EXPECT().InterfaceRegistry().Return(mIRegistry).AnyTimes()
+
 			if tc.mockLegacy != nil {
-				mockPlugin.On(fmt.Sprintf("%s_RegisterLegacyAminoCodec", "mocked_package_name")).Run(func(args mock.Arguments) {
-					tc.mockLegacy(mCodec)
-				}).Return(nil)
+				tc.mockLegacy(mCodec)
 			}
 			if tc.mockRegistry != nil {
-				if tc.mockRegistry != nil {
-					mCodec.EXPECT().InterfaceRegistry().AnyTimes()
-					tc.mockRegistry(mIRegistry)
-				}
+				tc.mockRegistry(mIRegistry)
 			}
 
 			// Run the test

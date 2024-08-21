@@ -12,10 +12,6 @@ import (
 	authcli "github.com/cosmos/cosmos-sdk/x/auth/client/cli"
 )
 
-const (
-	flagPluginsDir = "plugins-dir"
-)
-
 // GetSignCommand returns the transaction sign command.
 func GetSignCommand() *cobra.Command {
 	cmd := authcli.GetSignCommand()
