@@ -44,6 +44,15 @@ func txCommand(rootCmd *cobra.Command) *cobra.Command {
 	cmd.AddCommand(
 		signercli.GetValidateSignaturesCommand(),
 	)
+	cmd.AddCommand(
+		signercli.GetMultiSignCommand(),
+	)
+	cmd.AddCommand(
+		signercli.GetMultiSignBatchCommand(),
+	)
+	cmd.AddCommand(
+		signercli.GetSignBatchCommand(),
+	)
 
 	return cmd
 }
